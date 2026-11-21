@@ -3,14 +3,21 @@ package com.ultracam.ai
 
 import android.Manifest
 import android.app.Activity
+import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
+import android.provider.MediaStore
 import android.view.Gravity
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.TextView
+import android.widget.Toast
 
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -21,6 +28,9 @@ class MainActivity : Activity() {
 
     private lateinit var previewView: PreviewView
     private lateinit var statusText: TextView
+    private lateinit var captureButton: Button
+
+    private var imageCapture: ImageCapture? = null
 
     companion object {
         private const val CAMERA_REQUEST = 100
@@ -52,29 +62,47 @@ class MainActivity : Activity() {
         root.addView(
             previewView,
             FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                -1, -1
             )
         )
 
         statusText = TextView(this).apply {
             text = "ULTRACAM AI"
-            textSize = 20f
-            setTextColor(android.graphics.Color.WHITE)
-            setPadding(24, 20, 24, 20)
+            textSize = 19f
+            setTextColor(Color.WHITE)
+            setPadding(20, 24, 20, 24)
             gravity = Gravity.CENTER
         }
 
-        val statusParams = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        root.addView(
+            statusText,
+            FrameLayout.LayoutParams(
+                -1,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP
+            )
         )
 
-        root.addView(statusText, statusParams)
+        captureButton = Button(this).apply {
+            text = "CHỤP ẢNH"
+            textSize = 17f
+            setOnClickListener {
+                takePhoto()
+            }
+        }
 
-        window.statusBarColor = android.graphics.Color.BLACK
-        window.navigationBarColor = android.graphics.Color.BLACK
+        val buttonParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+        ).apply {
+            bottomMargin = 55
+        }
+
+        root.addView(captureButton, buttonParams)
+
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
 
         setContentView(root)
     }
@@ -87,12 +115,11 @@ class MainActivity : Activity() {
     }
 
     private fun startCamera() {
-        val cameraProviderFuture =
-            ProcessCameraProvider.getInstance(this)
+        val future = ProcessCameraProvider.getInstance(this)
 
-        cameraProviderFuture.addListener({
+        future.addListener({
 
-            val cameraProvider = cameraProviderFuture.get()
+            val provider = future.get()
 
             val preview = Preview.Builder().build()
 
@@ -100,25 +127,93 @@ class MainActivity : Activity() {
                 previewView.surfaceProvider
             )
 
-            val cameraSelector =
-                CameraSelector.DEFAULT_BACK_CAMERA
+            imageCapture = ImageCapture.Builder()
+                .setCaptureMode(
+                    ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
+                )
+                .build()
 
             try {
-                cameraProvider.unbindAll()
+                provider.unbindAll()
 
-                cameraProvider.bindToLifecycle(
+                provider.bindToLifecycle(
                     this,
-                    cameraSelector,
-                    preview
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    preview,
+                    imageCapture
                 )
 
-                statusText.text = "ULTRACAM AI • CAMERA READY"
+                statusText.text = "ULTRACAM AI • READY"
 
             } catch (e: Exception) {
-                statusText.text = "CAMERA ERROR: ${e.message}"
+                statusText.text = "CAMERA ERROR"
             }
 
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun takePhoto() {
+        val capture = imageCapture ?: return
+
+        captureButton.isEnabled = false
+        statusText.text = "ĐANG CHỤP..."
+
+        val values = ContentValues().apply {
+            put(
+                MediaStore.Images.Media.DISPLAY_NAME,
+                "UltraCam_${System.currentTimeMillis()}.jpg"
+            )
+            put(
+                MediaStore.Images.Media.MIME_TYPE,
+                "image/jpeg"
+            )
+
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                put(
+                    MediaStore.Images.Media.RELATIVE_PATH,
+                    "Pictures/UltraCam AI"
+                )
+            }
+        }
+
+        val options = ImageCapture.OutputFileOptions.Builder(
+            contentResolver,
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            values
+        ).build()
+
+        capture.takePicture(
+            options,
+            ContextCompat.getMainExecutor(this),
+            object : ImageCapture.OnImageSavedCallback {
+
+                override fun onImageSaved(
+                    result: ImageCapture.OutputFileResults
+                ) {
+                    captureButton.isEnabled = true
+                    statusText.text = "ULTRACAM AI • READY"
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Đã lưu ảnh thành công!",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+
+                override fun onError(
+                    exception: ImageCaptureException
+                ) {
+                    captureButton.isEnabled = true
+                    statusText.text = "CHỤP ẢNH THẤT BẠI"
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        exception.message ?: "Lỗi camera",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        )
     }
 
     override fun onRequestPermissionsResult(
