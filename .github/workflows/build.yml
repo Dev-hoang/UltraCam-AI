@@ -29,6 +29,13 @@ jobs:
         with:
           gradle-version: '8.9'
 
+      - name: Check Android Manifest
+        run: |
+          echo "=== MANIFEST CONTENT ==="
+          nl -ba app/src/main/AndroidManifest.xml
+          echo "=== XML DECLARATION COUNT ==="
+          grep -o '<?xml' app/src/main/AndroidManifest.xml | wc -l
+
       - name: Build APK
         run: gradle assembleDebug --stacktrace
 
